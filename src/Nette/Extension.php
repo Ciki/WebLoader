@@ -1,19 +1,28 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader\Nette;
 
-use Nette\Configurator;
+use Nette\Bootstrap\Configurator;
 use Nette\DI\Compiler;
 use Nette\DI\CompilerExtension;
 use Nette\DI\ContainerBuilder;
 use Nette\Schema\Expect;
 use Nette\Schema\Helpers as SchemaHelpers;
+use Nette\Schema\Processor;
 use Nette\Schema\Schema;
+use Nette\Utils\FileInfo;
 use Nette\Utils\Finder;
-use SplFileInfo;
-use WebLoader\FileNotFoundException;
+use WebLoader\BatchCollection;
+use WebLoader\Compiler as WebloaderCompiler;
+use WebLoader\Contract\IWebloaderAssetProvider;
+use WebLoader\Exception\BatchAlreadyExistsException;
+use WebLoader\Exception\CompilationException;
+use WebLoader\Exception\FileNotFoundException;
+use WebLoader\FileCollection;
+use WebLoader\Nette\Diagnostics\Panel;
+use WebLoader\Nette\SymfonyConsole\GenerateCommand;
 
 /**
  * @author Jan Marek
@@ -26,6 +35,7 @@ class Extension extends CompilerExtension
 	private string $appDir;
 	private string $wwwDir;
 	private bool $debugMode;
+	private BatchCollection $batchCollection;
 
 
 	public function __construct(string $appDir, string $wwwDir, bool $debugMode)
@@ -33,50 +43,83 @@ class Extension extends CompilerExtension
 		$this->appDir = $appDir;
 		$this->wwwDir = $wwwDir;
 		$this->debugMode = $debugMode;
+		$this->batchCollection = new BatchCollection;
+	}
+
+
+	private function getJsConfigSchema(bool $useDefaults = false): Schema
+	{
+		$checkLastModified = $useDefaults ? true : null;
+		$debug = $useDefaults ? false : null;
+		$sourceDir = $useDefaults ? ($this->wwwDir . '/js') : null;
+		$tempDir = $useDefaults ? ($this->wwwDir . '/' . self::DEFAULT_TEMP_PATH) : null;
+		$tempPath = $useDefaults ? self::DEFAULT_TEMP_PATH : null;
+		$async = $useDefaults ? false : null;
+		$defer = $useDefaults ? false : null;
+		$absoluteUrl = $useDefaults ? false : null;
+		$namingConvention = $useDefaults
+			? ('@' . $this->prefix('jsNamingConvention'))
+			: null;
+
+		return Expect::structure([
+			'checkLastModified' => Expect::bool($checkLastModified),
+			'debug' => Expect::bool($debug),
+			'sourceDir' => Expect::string($sourceDir),
+			'tempDir' => Expect::string($tempDir),
+			'tempPath' => Expect::string($tempPath),
+			'files' => Expect::array(),
+			'watchFiles' => Expect::array(),
+			'filters' => Expect::array(),
+			'fileFilters' => Expect::array(),
+			'async' => Expect::bool($async),
+			'defer' => Expect::bool($defer),
+			'nonce' => Expect::string()->nullable(),
+			'absoluteUrl' => Expect::bool($absoluteUrl),
+			'namingConvention' => Expect::string($namingConvention),
+		]);
+	}
+
+
+	private function getCssConfigSchema(bool $useDefaults = false): Schema
+	{
+		$checkLastModified = $useDefaults ? true : null;
+		$debug = $useDefaults ? false : null;
+		$sourceDir = $useDefaults ? ($this->wwwDir . '/css') : null;
+		$tempDir = $useDefaults ? ($this->wwwDir . '/' . self::DEFAULT_TEMP_PATH) : null;
+		$tempPath = $useDefaults ? self::DEFAULT_TEMP_PATH : null;
+		$async = $useDefaults ? false : null;
+		$defer = $useDefaults ? false : null;
+		$absoluteUrl = $useDefaults ? false : null;
+		$namingConvention = $useDefaults
+			? ('@' . $this->prefix('cssNamingConvention'))
+			: null;
+
+		return Expect::structure([
+			'checkLastModified' => Expect::bool($checkLastModified),
+			'debug' => Expect::bool($debug),
+			'sourceDir' => Expect::string($sourceDir),
+			'tempDir' => Expect::string($tempDir),
+			'tempPath' => Expect::string($tempPath),
+			'files' => Expect::array(),
+			'watchFiles' => Expect::array(),
+			'filters' => Expect::array(),
+			'fileFilters' => Expect::array(),
+			'async' => Expect::bool($async),
+			'defer' => Expect::bool($defer),
+			'nonce' => Expect::string()->nullable(),
+			'absoluteUrl' => Expect::bool($absoluteUrl),
+			'namingConvention' => Expect::string($namingConvention),
+		]);
 	}
 
 
 	public function getConfigSchema(): Schema
 	{
 		return Expect::structure([
-			'jsDefaults' => Expect::structure([
-				'checkLastModified' => Expect::bool(true),
-				'debug' => Expect::bool(false),
-				'sourceDir' => Expect::string($this->wwwDir . '/js'),
-				'tempDir' => Expect::string($this->wwwDir . '/' . self::DEFAULT_TEMP_PATH),
-				'tempPath' => Expect::string(self::DEFAULT_TEMP_PATH),
-				'files' => Expect::array(),
-				'watchFiles' => Expect::array(),
-				'remoteFiles' => Expect::array(),
-				'filters' => Expect::array(),
-				'fileFilters' => Expect::array(),
-				'joinFiles' => Expect::bool(true),
-				'async' => Expect::bool(false),
-				'defer' => Expect::bool(false),
-				'nonce' => Expect::string()->nullable(),
-				'absoluteUrl' => Expect::bool(false),
-				'namingConvention' => Expect::string('@' . $this->prefix('jsNamingConvention')),
-			]),
-			'cssDefaults' => Expect::structure([
-				'checkLastModified' => Expect::bool(true),
-				'debug' => Expect::bool(false),
-				'sourceDir' => Expect::string($this->wwwDir . '/css')->dynamic(),
-				'tempDir' => Expect::string($this->wwwDir . '/' . self::DEFAULT_TEMP_PATH),
-				'tempPath' => Expect::string(self::DEFAULT_TEMP_PATH),
-				'files' => Expect::array(),
-				'watchFiles' => Expect::array(),
-				'remoteFiles' => Expect::array(),
-				'filters' => Expect::array(),
-				'fileFilters' => Expect::array(),
-				'joinFiles' => Expect::bool(true),
-				'async' => Expect::bool(false),
-				'defer' => Expect::bool(false),
-				'nonce' => Expect::string()->nullable(),
-				'absoluteUrl' => Expect::bool(false),
-				'namingConvention' => Expect::string('@' . $this->prefix('cssNamingConvention')),
-			]),
-			'js' => Expect::array(),
-			'css' => Expect::array(),
+			'jsDefaults' => $this->getJsConfigSchema(true),
+			'cssDefaults' => $this->getCssConfigSchema(true),
+			'js' => Expect::arrayOf($this->getJsConfigSchema())->nullable(),
+			'css' => Expect::arrayOf($this->getCssConfigSchema())->nullable(),
 			'debugger' => Expect::bool($this->debugMode),
 		]);
 	}
@@ -95,7 +138,7 @@ class Extension extends CompilerExtension
 
 		if ($config['debugger']) {
 			$builder->addDefinition($this->prefix('tracyPanel'))
-				->setType('WebLoader\Nette\Diagnostics\Panel')
+				->setType(Panel::class)
 				->setArguments([$this->appDir]);
 		}
 
@@ -103,37 +146,53 @@ class Extension extends CompilerExtension
 
 		$loaderFactoryTempPaths = [];
 
-		foreach (['css', 'js'] as $type) {
-			foreach ($config[$type] as $name => $wlConfig) {
-				/** @var array $wlConfig */
-				$wlConfig = SchemaHelpers::merge($wlConfig, $config[$type . 'Defaults']);
-				$this->addWebLoader($builder, $type . ucfirst($name), $wlConfig);
-				$loaderFactoryTempPaths[strtolower($name)] = $wlConfig['tempPath'];
+		$this->extractBatchesFromExtensions();
+		$this->extractNormalBatches($config);
 
-				if (!is_dir($wlConfig['tempDir']) || !is_writable($wlConfig['tempDir'])) {
-					throw new CompilationException(sprintf("You must create a writable directory '%s'", $wlConfig['tempDir']));
+		$batchTypes = $this->batchCollection->getBatches();
+		foreach ($batchTypes as $type => $batches) {
+			foreach ($batches as $name => $batch) {
+				$batch = array_filter($batch);
+				$batch = SchemaHelpers::merge($batch, $config[$type . 'Defaults']);
+
+				if (!is_array($batch)) {
+					throw new CompilationException('Batch config not valid.');
+				}
+
+				$this->addWebLoader($builder, $type . ucfirst($name), $batch);
+				$loaderFactoryTempPaths[strtolower($name)] = $batch['tempPath'];
+
+				if (!is_dir($batch['tempDir']) || !is_writable($batch['tempDir'])) {
+					throw new CompilationException(sprintf("You must create a writable directory '%s'", $batch['tempDir']));
 				}
 			}
 		}
 
 		$builder->addDefinition($this->prefix('factory'))
-			->setType('WebLoader\Nette\LoaderFactory')
+			->setType(LoaderFactory::class)
 			->setArguments([$loaderFactoryTempPaths, $this->name]);
 
 		if (class_exists('Symfony\Component\Console\Command\Command')) {
 			$builder->addDefinition($this->prefix('generateCommand'))
-				->setType('WebLoader\Nette\SymfonyConsole\GenerateCommand')
+				->setType(GenerateCommand::class)
 				->addTag('kdyby.console.command');
 		}
 	}
 
 
+	/**
+	 * @param ContainerBuilder $builder
+	 * @param string $name
+	 * @param array<int|string, mixed> $config
+	 * @return void
+	 * @throws FileNotFoundException
+	 */
 	private function addWebLoader(ContainerBuilder $builder, string $name, array $config): void
 	{
 		$filesServiceName = $this->prefix($name . 'Files');
 
 		$files = $builder->addDefinition($filesServiceName)
-			->setType('WebLoader\FileCollection')
+			->setType(FileCollection::class)
 			->setArguments([$config['sourceDir']]);
 
 		foreach ($this->findFiles($config['files'], $config['sourceDir']) as $file) {
@@ -144,10 +203,8 @@ class Extension extends CompilerExtension
 			$files->addSetup('addWatchFile', [$file]);
 		}
 
-		$files->addSetup('addRemoteFiles', [$config['remoteFiles']]);
-
 		$compiler = $builder->addDefinition($this->prefix($name . 'Compiler'))
-			->setType('WebLoader\Compiler')
+			->setType(WebloaderCompiler::class)
 			->setArguments([
 				'@' . $filesServiceName,
 				$config['namingConvention'],
@@ -155,7 +212,6 @@ class Extension extends CompilerExtension
 			]);
 
 		$compiler
-			->addSetup('setJoinFiles', [$config['joinFiles']])
 			->addSetup('setAsync', [$config['async']])
 			->addSetup('setDefer', [$config['defer']])
 			->addSetup('setNonce', [$config['nonce']])
@@ -211,11 +267,17 @@ class Extension extends CompilerExtension
 	}
 
 
+	/**
+	 * @param array<int|string, mixed> $filesConfig
+	 * @param string $sourceDir
+	 * @return array<int|string, mixed>
+	 * @throws FileNotFoundException
+	 */
 	private function findFiles(array $filesConfig, string $sourceDir): array
 	{
 		$normalizedFiles = [];
 
-		/** @var array|string $file */
+		/** @var array<string, mixed>|string $file */
 		foreach ($filesConfig as $file) {
 			// finder support
 			if (is_array($file) && isset($file['files']) && (isset($file['in']) || isset($file['from']))) {
@@ -233,7 +295,7 @@ class Extension extends CompilerExtension
 
 				$foundFilesList = [];
 				foreach ($finder as $foundFile) {
-					/** @var SplFileInfo $foundFile */
+					/** @var FileInfo $foundFile */
 					$foundFilesList[] = $foundFile->getPathname();
 				}
 
@@ -279,5 +341,44 @@ class Extension extends CompilerExtension
 		}
 
 		return file_exists($file);
+	}
+
+
+	private function extractBatchesFromExtensions(): void
+	{
+		// Extension batches
+		/** @var array<IWebloaderAssetProvider> $batchProviders */
+		$batchProviders = $this->compiler->getExtensions(IWebloaderAssetProvider::class);
+
+		if (empty($batchProviders)) {
+			return;
+		}
+
+		$schemaProcessor = new Processor;
+
+		foreach ($batchProviders as $batchProvider) {
+			$assets = $batchProvider->getWebloaderAssets();
+			$schemaProcessor->process($this->getConfigSchema(), $assets);
+
+			foreach ($assets as $type => $batches) {
+				foreach ($batches as $name => $batch) {
+					$this->batchCollection->addBatch($type, $name, $batch);
+				}
+			}
+		}
+	}
+
+
+	/**
+	 * @param array<string, mixed> $config
+	 * @throws BatchAlreadyExistsException
+	 */
+	private function extractNormalBatches(array $config): void
+	{
+		foreach (['css', 'js'] as $type) {
+			foreach ($config[$type] as $name => $batch) {
+				$this->batchCollection->addBatch($type, $name, $batch);
+			}
+		}
 	}
 }

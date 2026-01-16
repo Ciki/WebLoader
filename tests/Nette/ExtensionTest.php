@@ -3,17 +3,17 @@ declare(strict_types=1);
 
 namespace WebLoader\Test\Nette;
 
-use Nette\Configurator;
+use Nette\Bootstrap\Configurator;
 use Nette\DI\Compiler;
 use Nette\DI\Container;
 use Nette\Utils\Finder;
 use PHPUnit\Framework\TestCase;
+use WebLoader\Compiler as WebloaderCompiler;
 use WebLoader\Nette\Extension;
 use WebLoader\Path;
 
 class ExtensionTest extends TestCase
 {
-
 	private Container $container;
 	private string $appDir;
 	private string $wwwDir;
@@ -32,9 +32,14 @@ class ExtensionTest extends TestCase
 	}
 
 
+	/** @param list<string> $configFiles */
 	private function prepareContainer(array $configFiles): void
 	{
-		foreach (Finder::findFiles('*')->exclude('.gitignore')->from($this->tempDir . '/cache') as $file) {
+		$finder = Finder::findFiles('*')
+			->exclude('.gitignore')
+			->from($this->tempDir . '/cache');
+
+		foreach ($finder as $file) {
 			unlink((string) $file);
 		}
 
@@ -73,35 +78,6 @@ class ExtensionTest extends TestCase
 
 		$this->assertTrue(in_array(Path::normalize($this->fixturesDir . '/a.txt'), $files, true));
 		$this->assertFalse(in_array(Path::normalize($this->fixturesDir . '/dir/one.js'), $files, true));
-	}
-
-
-	public function testJoinFilesOn(): void
-	{
-		$this->prepareContainer([
-			$this->fixturesDir . '/extension.neon',
-			$this->fixturesDir . '/extensionJoinFilesTrue.neon',
-		]);
-		$this->assertTrue($this->container->getService('webloader.jsDefaultCompiler')->getJoinFiles());
-	}
-
-
-	public function testJoinFilesOff(): void
-	{
-		$this->prepareContainer([
-			$this->fixturesDir . '/extension.neon',
-			$this->fixturesDir . '/extensionJoinFilesFalse.neon',
-		]);
-		$this->assertFalse($this->container->getService('webloader.jsDefaultCompiler')->getJoinFiles());
-	}
-
-
-	public function testJoinFilesOffInOneService(): void
-	{
-		$this->prepareContainer([
-			$this->fixturesDir . '/extension.neon',
-		]);
-		$this->assertFalse($this->container->getService('webloader.cssJoinOffCompiler')->getJoinFiles());
 	}
 
 
@@ -198,7 +174,13 @@ class ExtensionTest extends TestCase
 		$configurator->addConfig($this->fixturesDir . '/extensionName.neon');
 		$container = $configurator->createContainer();
 
-		$this->assertInstanceOf('WebLoader\Compiler', $container->getService('Foo.cssDefaultCompiler'));
-		$this->assertInstanceOf('WebLoader\Compiler', $container->getService('Foo.jsDefaultCompiler'));
+		$this->assertInstanceOf(
+			WebloaderCompiler::class,
+			$container->getService('Foo.cssDefaultCompiler')
+		);
+		$this->assertInstanceOf(
+			WebloaderCompiler::class,
+			$container->getService('Foo.jsDefaultCompiler')
+		);
 	}
 }

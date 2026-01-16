@@ -1,50 +1,30 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader\Filter;
 
-use ScssPhp\ScssPhp\Compiler as ScssCompiler;
 use WebLoader\Compiler;
+use ScssPhp\ScssPhp\Compiler as ScssCompiler;
 
-/**
- * Scss CSS filter
- *
- * @author Roman Matěna
- * @license MIT
- */
-class ScssFilter
+final class ScssFilter
 {
 
-	private ?ScssCompiler $sc;
-
-
-	public function __construct(?ScssCompiler $sc = null)
+	private function getCompiler(): ScssCompiler
 	{
-		$this->sc = $sc;
-	}
-
-
-	private function getScssC(): ScssCompiler
-	{
-		// lazy loading
-		if (empty($this->sc)) {
-			$this->sc = new ScssCompiler();
-		}
-
-		return $this->sc;
+		return new ScssCompiler;
 	}
 
 
 	public function __invoke(string $code, Compiler $loader, string $file): string
 	{
-		$file = (string) $file;
-
 		if (pathinfo($file, PATHINFO_EXTENSION) === 'scss') {
-			$this->getScssC()->setImportPaths(['', pathinfo($file, PATHINFO_DIRNAME) . '/']);
-			return $this->getScssC()->compile($code);
+			$compiler = $this->getCompiler();
+			$compiler->setImportPaths([pathinfo($file, PATHINFO_DIRNAME) . '/']);
+			$result = $compiler->compileString($code);
+			return $result->getCss();
 		}
 
-		return (string) $code;
+		return $code;
 	}
 }

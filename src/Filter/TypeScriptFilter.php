@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader\Filter;
 
@@ -14,14 +14,13 @@ use WebLoader\Compiler;
  */
 class TypeScriptFilter
 {
+	/** @var array<string, string> */
+	private array $env;
 
-	private ?string $bin;
-	private ?array $env;
 
-
-	public function __construct(string $bin = 'tsc', array $env = [])
+	/** @param array<string, string> $env */
+	public function __construct(private string $bin = 'tsc', array $env = [])
 	{
-		$this->bin = $bin;
 		$this->env = $env + $_ENV;
 		unset($this->env['argv'], $this->env['argc']);
 	}

@@ -1,6 +1,6 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader\Filter;
 
@@ -14,13 +14,13 @@ use RuntimeException;
  */
 class Process
 {
+	/** @param array<string, string> $env */
 	public static function run(
 		string $cmd,
 		?string $stdin = null,
 		?string $cwd = null,
 		?array $env = null
-	): string
-	{
+	): string {
 		$descriptorspec = [
 			0 => ['pipe', 'r'], // stdin
 			1 => ['pipe', 'w'], // stdout

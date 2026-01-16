@@ -1,49 +1,44 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader\Nette;
 
 use Nette\DI\Container;
 use Nette\Http\IRequest;
 use WebLoader\Compiler;
+use WebLoader\Contract\IOutputNamingConvention;
 use WebLoader\DefaultOutputNamingConvention;
-use WebLoader\IOutputNamingConvention;
 
 class LoaderFactory
 {
-
-	private IRequest $httpRequest;
-	private Container $diContainer;
-	private string $extensionName;
-
-	/** @var array<string> */
-	private array $tempPaths;
-
-
-	/**
-	 * @param array<string> $tempPaths
-	 * @param string $extensionName
-	 * @param IRequest $httpRequest
-	 * @param Container $diContainer
-	 */
+	/** @param array<string> $tempPaths */
 	public function __construct(
-		array $tempPaths,
-		string $extensionName,
-		IRequest $httpRequest,
-		Container $diContainer
+		private array $tempPaths,
+		private string $extensionName,
+		private IRequest $httpRequest,
+		private Container $diContainer
 	) {
-		$this->httpRequest = $httpRequest;
-		$this->diContainer = $diContainer;
-		$this->tempPaths = $tempPaths;
-		$this->extensionName = $extensionName;
+	}
+
+
+	private function getCompiler(string $name, string $type): Compiler
+	{
+		/** @var Compiler $compiler */
+		$compiler = $this->diContainer->getService(
+			$this->extensionName .
+			'.' .
+			$type .
+			ucfirst($name) .
+			'Compiler'
+		);
+		return $compiler;
 	}
 
 
 	public function createCssLoader(string $name, bool $appendLastModified = true): CssLoader
 	{
-		/** @var Compiler $compiler */
-		$compiler = $this->diContainer->getService($this->extensionName . '.css' . ucfirst($name) . 'Compiler');
+		$compiler = $this->getCompiler($name, 'css');
 		$this->modifyConvention($compiler->getOutputNamingConvention(), $name);
 		return new CssLoader($compiler, $this->formatTempPath($name, $compiler->isAbsoluteUrl()), $appendLastModified);
 	}
@@ -51,8 +46,7 @@ class LoaderFactory
 
 	public function createJavaScriptLoader(string $name, bool $appendLastModified = true): JavaScriptLoader
 	{
-		/** @var Compiler $compiler */
-		$compiler = $this->diContainer->getService($this->extensionName . '.js' . ucfirst($name) . 'Compiler');
+		$compiler = $this->getCompiler($name, 'js');
 		$this->modifyConvention($compiler->getOutputNamingConvention(), $name);
 		return new JavaScriptLoader($compiler, $this->formatTempPath($name, $compiler->isAbsoluteUrl()), $appendLastModified);
 	}
@@ -61,18 +55,16 @@ class LoaderFactory
 	private function formatTempPath(string $name, bool $absoluteUrl = false): string
 	{
 		$lName = strtolower($name);
-		$tempPath = isset($this->tempPaths[$lName]) ? $this->tempPaths[$lName] : Extension::DEFAULT_TEMP_PATH;
+		$tempPath = $this->tempPaths[$lName] ?? Extension::DEFAULT_TEMP_PATH;
 		$method = $absoluteUrl ? 'getBaseUrl' : 'getBasePath';
-		return rtrim($this->httpRequest->getUrl()->{$method}(), '/') . '/' . $tempPath;
+		return rtrim($this->httpRequest->getUrl()->withoutUserInfo()->{$method}(), '/') . '/' . $tempPath;
 	}
 
 
-	private function modifyConvention(IOutputNamingConvention $convention, string $name): IOutputNamingConvention
+	private function modifyConvention(IOutputNamingConvention $convention, string $name): void
 	{
 		if ($convention instanceof DefaultOutputNamingConvention) {
 			$convention->setPrefix($name . '-');
 		}
-
-		return $convention;
 	}
 }

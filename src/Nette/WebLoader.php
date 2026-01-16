@@ -1,12 +1,13 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader\Nette;
 
 use Nette\Application\UI\Control;
 use Nette\Utils\Html;
 use WebLoader\Compiler;
+use WebLoader\Enum\RenderMode;
 use WebLoader\File;
 use WebLoader\FileCollection;
 
@@ -18,17 +19,13 @@ use WebLoader\FileCollection;
  */
 abstract class WebLoader extends Control
 {
+	private RenderMode $renderMode = RenderMode::LINK;
 
-	private Compiler $compiler;
-	private string $tempPath;
-	private bool $appendLastModified;
-
-
-	public function __construct(Compiler $compiler, string $tempPath, bool $appendLastModified)
-	{
-		$this->compiler = $compiler;
-		$this->tempPath = $tempPath;
-		$this->appendLastModified = $appendLastModified;
+	public function __construct(
+		private Compiler $compiler,
+		private string $tempPath,
+		private readonly bool $appendLastModified
+	) {
 	}
 
 
@@ -59,7 +56,22 @@ abstract class WebLoader extends Control
 	/**
 	 * Get html element including generated content
 	 */
-	abstract public function getElement(string $source): Html;
+	abstract public function getElement(File $file): Html;
+
+
+	abstract public function getInlineElement(File $file): Html;
+
+
+	public function setRenderMode(RenderMode $renderMode): void
+	{
+		$this->renderMode = $renderMode;
+	}
+
+
+	protected function getUrl(File $file): string
+	{
+		return $this->getGeneratedFilePath($file);
+	}
 
 
 	/**
@@ -76,24 +88,43 @@ abstract class WebLoader extends Control
 			$this->compiler->setFileCollection($newFiles);
 		}
 
-		// remote files
-		foreach ($this->compiler->getFileCollection()->getRemoteFiles() as $file) {
-			echo $this->getElement($file), PHP_EOL;
+		$file = $this->compiler->generate();		
+
+		if ($file === null) {
+			return;
 		}
 
-		foreach ($this->compiler->generate() as $file) {
-			echo $this->getElement($this->getGeneratedFilePath($file)), PHP_EOL;
-		}
+		$output = match ($this->renderMode) {
+			RenderMode::URL => $this->getUrl($file),
+			RenderMode::LINK => $this->getElement($file),
+			RenderMode::INLINE => $this->getInlineElement($file),
+		};
 
-		if ($hasArgs && !empty($backup)) {
+		echo $output, PHP_EOL;
+
+		if ($hasArgs) {
 			$this->compiler->setFileCollection($backup);
 		}
 	}
 
 
+	public function renderInline(): void
+	{
+		$this->setRenderMode(RenderMode::INLINE);
+		$this->render();
+	}
+
+
+	public function renderUrl(): void
+	{
+		$this->setRenderMode(renderMode::URL);
+		$this->render();
+	}
+
+
 	protected function getGeneratedFilePath(File $file): string
 	{
-		$path = $this->tempPath . '/' . $file->getFile();
+		$path = $this->tempPath . '/' . $file->getFileName();
 
 		if ($this->appendLastModified) {
 			$path .= '?' . $file->getLastModified();

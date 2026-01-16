@@ -1,40 +1,48 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace WebLoader;
 
-class File
+use SplFileInfo;
+
+final class File
 {
+	private SplFileInfo $file;
 
-	protected string $file;
-	protected ?int $lastModified;
-	protected array $sourceFiles;
+	/** @var array<int|string, string> */
+	private array $sourceFiles;
 
 
+	/** @param array<int|string, string> $sourceFiles */
 	public function __construct(
-		string $file,
-		?int $lastModified,
-		array $sourceFiles
+		string $path,
+		array $sourceFiles,
 	) {
-		$this->file = $file;
-		$this->lastModified = $lastModified;
+		$this->file = new SplFileInfo($path);
 		$this->sourceFiles = $sourceFiles;
 	}
 
 
-	public function getFile(): string
+	public function getFileName(): string
 	{
-		return $this->file;
+		return $this->file->getBasename();
 	}
 
 
-	public function getLastModified(): ?int
+	public function getPath(): string
 	{
-		return $this->lastModified;
+		return $this->file->getPathname();
 	}
 
 
+	public function getLastModified(): int
+	{
+		return $this->file->getMTime();
+	}
+
+
+	/** @return array<int|string, string> */
 	public function getSourceFiles(): array
 	{
 		return $this->sourceFiles;

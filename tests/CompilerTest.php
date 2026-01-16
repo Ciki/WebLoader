@@ -3,11 +3,16 @@ declare(strict_types=1);
 
 namespace WebLoader\Test;
 
+use Exception;
 use Mockery;
 use PHPUnit\Framework\TestCase;
 use TypeError;
 use WebLoader\Compiler;
-use WebLoader\FileNotFoundException;
+use WebLoader\Contract\IFileCollection;
+use WebLoader\Contract\IOutputNamingConvention;
+use WebLoader\File;
+use WebLoader\FileCollection;
+use WebLoader\Exception\FileNotFoundException;
 
 /**
  * CompilerTest
@@ -22,7 +27,7 @@ class CompilerTest extends TestCase
 
 	protected function setUp(): void
 	{
-		$fileCollection = Mockery::mock('WebLoader\IFileCollection');
+		$fileCollection = Mockery::mock(IFileCollection::class);
 		$fileCollection->shouldReceive('getFiles')->andReturn([
 			__DIR__ . '/fixtures/a.txt',
 			__DIR__ . '/fixtures/b.txt',
@@ -34,7 +39,7 @@ class CompilerTest extends TestCase
 			__DIR__ . '/fixtures/c.txt',
 		]);
 
-		$convention = Mockery::mock('WebLoader\IOutputNamingConvention');
+		$convention = Mockery::mock(IOutputNamingConvention::class);
 		$convention->shouldReceive('getFilename')->andReturnUsing(function ($files, $compiler) {
 			return 'webloader-' . md5(join(',', $files));
 		});
@@ -47,41 +52,26 @@ class CompilerTest extends TestCase
 	}
 
 
+	/** @return list<string> */
 	private function getTempFiles(): array
 	{
-		return (array) glob(__DIR__ . '/temp/webloader-*');
-	}
+		$files = glob(__DIR__ . '/temp/webloader-*');
 
+		if ($files === false) {
+			return [];
+		}
 
-	public function testJoinFiles(): void
-	{
-		$this->assertTrue($this->object->getJoinFiles());
-
-		$ret = $this->object->generate();
-		$this->assertCount(1, $ret, 'Multiple files are generated instead of join.');
-		$this->assertCount(1, $this->getTempFiles(), 'Multiple files are generated instead of join.');
+		return $files;
 	}
 
 
 	public function testEmptyFiles(): void
 	{
-		$this->assertTrue($this->object->getJoinFiles());
-		$this->object->setFileCollection(new \WebLoader\FileCollection());
+		$this->object->setFileCollection(new FileCollection(''));
 
 		$ret = $this->object->generate();
-		$this->assertCount(0, $ret);
+		$this->assertNull($ret);
 		$this->assertCount(0, $this->getTempFiles());
-	}
-
-
-	public function testNotJoinFiles(): void
-	{
-		$this->object->setJoinFiles(false);
-		$this->assertFalse($this->object->getJoinFiles());
-
-		$ret = $this->object->generate();
-		$this->assertCount(3, $ret, 'Wrong file count generated.');
-		$this->assertCount(3, $this->getTempFiles(), 'Wrong file count generated.');
 	}
 
 
@@ -110,11 +100,11 @@ class CompilerTest extends TestCase
 		$expectedContent = '-' . PHP_EOL . 'a:cba,' . PHP_EOL . 'b:fed,' . PHP_EOL .
 			'c:ihg,-' . PHP_EOL . 'a:cba,' . PHP_EOL . 'b:fed,' . PHP_EOL . 'c:ihg,';
 
-		$files = $this->object->generate();
+		$file = $this->generateFile();
 
-		$this->assertTrue(is_numeric($files[0]->getLastModified()) && $files[0]->getLastModified() > 0, 'Generate does not provide last modified timestamp correctly.');
+		$this->assertTrue($file->getLastModified() && $file->getLastModified() > 0, 'Generate does not provide last modified timestamp correctly.');
 
-		$content = file_get_contents($this->object->getOutputDir() . '/' . $files[0]->getFile());
+		$content = file_get_contents($this->object->getOutputDir() . '/' . $file->getFileName());
 
 		$this->assertEquals($expectedContent, $content);
 	}
@@ -122,10 +112,10 @@ class CompilerTest extends TestCase
 
 	public function testGenerateReturnsSourceFilePaths(): void
 	{
-		$res = $this->object->generate();
-		$this->assertIsArray($res[0]->getSourceFiles());
-		$this->assertCount(3, $res[0]->getSourceFiles());
-		$this->assertFileExists($res[0]->getSourceFiles()[0]);
+		$file = $this->generateFile();
+
+		$this->assertCount(3, $file->getSourceFiles());
+		$this->assertFileExists($file->getSourceFiles()[0]);
 	}
 
 
@@ -162,5 +152,17 @@ class CompilerTest extends TestCase
 	{
 		$this->expectException(TypeError::class);
 		$this->object->addFileFilter(4);
+	}
+
+
+	private function generateFile(): File
+	{
+		$file = $this->object->generate();
+
+		if ($file === null) {
+			throw new Exception('Should not be empty');
+		}
+
+		return $file;
 	}
 }

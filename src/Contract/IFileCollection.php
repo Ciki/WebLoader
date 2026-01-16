@@ -1,8 +1,8 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
-namespace WebLoader;
+namespace WebLoader\Contract;
 
 /**
  * @author Jan Marek
@@ -11,9 +11,9 @@ interface IFileCollection
 {
 	public function getRoot(): string;
 
+	/** @return list<string> */
 	public function getFiles(): array;
 
-	public function getRemoteFiles(): array;
-
+	/** @return list<string> */
 	public function getWatchFiles(): array;
 }
