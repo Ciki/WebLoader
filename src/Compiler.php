@@ -229,7 +229,8 @@ class Compiler
 		if (!file_exists($path) || $lastModified > filemtime($path) || $this->debugging === true) {
 			// disabled: https://github.com/nette/safe-stream/pull/5
 			// $outPath = in_array('nette.safe', stream_get_wrappers(), true) ? 'nette.safe://' . $path : $path;
-			FileSystem::write($path, $this->getContent($files));
+			// mode null: the bundle gets its mode from the process umask, not Nette's default chmod 0666 (world-writable)
+			FileSystem::write($path, $this->getContent($files), null);
 		}
 
 		return new File($path, $files);
